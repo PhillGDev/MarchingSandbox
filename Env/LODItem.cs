@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using Unity.Mathematics;
 public class LODItem : MonoBehaviour
 {
     //Functionality is handled by the ChunkCreator.
@@ -17,13 +17,13 @@ public class LODItem : MonoBehaviour
     [System.Serializable]
     public struct LodItemData
     {
-        public ChunkCreator.Float3 Position;
-        public ChunkCreator.Float3 Euler;
+        public float3 Position;
+        public float3 Euler;
         public string ItemId;
         public LodItemData(LODItem item)
         {
-            Position =  new ChunkCreator.Float3(item.transform.position);
-            Euler = new ChunkCreator.Float3(item.transform.eulerAngles);
+            Position = new float3(item.transform.position);
+            Euler = new float3(item.transform.eulerAngles);
             ItemId = LODItemDatabase.Singleton.GetIDFromObj(item.gameObject);
         }
     }

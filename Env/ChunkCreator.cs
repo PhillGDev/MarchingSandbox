@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Formatters.Binary;
 using Unity.Mathematics;
 using UnityEngine;
 public class ChunkCreator : MonoBehaviour
@@ -16,11 +18,55 @@ public class ChunkCreator : MonoBehaviour
     public Queue<Chunk> ToDispose = new Queue<Chunk>();
     public Dictionary<Vector3Int, Chunk> Chunks = new Dictionary<Vector3Int, Chunk>();
     public GameObject Prefab;
+    public string TerrainPath;
     private void Start()
     {
         Singleton = this;
+        //Check to see if we have a saved world we could load.
+        if (TerrainPath != "")
+        {
+            if (File.Exists(GetPath()))
+            {
+                //Looks like we can load a world.
+                //Load the data and set all savedchunks to be that of the saved world.
+                WorldData data = LoadData(GetPath());
+                Debug.Log("Loading World: " + TerrainPath + " Created " + data.dateTime.ToString());
+                foreach (KeyValuePair<int3, DataChunk> Chunk in data.ChunksData)
+                {
+                    SavedChunks.Add(new Vector3Int(Chunk.Key.x, Chunk.Key.y, Chunk.Key.z), Chunk.Value);
+                }
+            }
+        }
         InvokeRepeating(nameof(Tick), 0f, .2f);
         CheckUnload = Time.time + 2;
+    }
+    string GetPath()
+    {
+        return Application.dataPath + "/Resources/" + TerrainPath + ".wrldat";
+    }
+    public void Save()
+    {
+        string filename = string.Format("{0}/Resources/{1}" + ".wrldat", Application.dataPath, TerrainPath);
+        WorldData Data = new WorldData(this);
+        BinaryFormatter formatter = new BinaryFormatter();
+        FileStream stream;
+        if (File.Exists(filename))
+        {
+            File.Delete(filename);
+            stream = new FileStream(filename, FileMode.Create);
+        }
+        else
+        {
+            stream = new FileStream(filename, FileMode.Create);
+        }
+        formatter.Serialize(stream, Data); //UnityEngine.Vector3 In Assemly is not marked as serialiseable.
+        Debug.Log("Saved world setup at " + filename + " With " + Data.ChunksData.Count + " Data Chunks.");
+    }
+    WorldData LoadData(string Path)
+    {
+        FileStream stream = new FileStream(Path, FileMode.Open);
+        BinaryFormatter formatter = new BinaryFormatter();
+        return formatter.Deserialize(stream) as WorldData;
     }
     public void RemoveFromQeue(Chunk chunk)
     {
@@ -70,18 +116,18 @@ public class ChunkCreator : MonoBehaviour
     //try checking out the new 'noise' library in unity.Mathematics
     public float CalculateDensity(int3 Coordinate, Vector3 NoiseOffset, int Size)
     {
-        //above noiseoffset 3 is air, below -20 is solid
+        //0 = Ground.
+        //1 = Air.
+        //Keep this in mind.
         Vector3 WorldPosition = CalculateWorldPos(Coordinate, NoiseOffset, Size);
         //Do a check to see if this is out of bounds.
         if (WorldPosition.y <= -20) return 0f;
         Vector3 NoiseCave = CalculatePointNoise(Coordinate, 25f, NoiseOffset, Size);
-        Vector3 NoiseTransition = CalculatePointNoise(Coordinate, 500f, NoiseOffset, Size);
-        //Lerps to 1 above ground? 
-        //Lerps to 0 below ground?
-        //6 - 5 = 1
-        //2 - 5 = -3 (clamped: -1)
-        float Interp = (WorldPosition.y - SurfaceLevel) + Perlin2Noise(NoiseTransition);
-        return Mathf.LerpUnclamped(Perlin3Noise(NoiseCave) / Interp, 1f / Interp, Interp); //Subtract the tranision by the height, to prevent floating caves.
+        Vector3 NoiseSurface = CalculatePointNoise(Coordinate, 15f, NoiseOffset, Size);
+        float Interp = (WorldPosition.y - SurfaceLevel) + Perlin2Noise(NoiseSurface); //This gives us a value for the surface
+        //Modify Interp to have a low value at the surface, dependent on the noiseTransition.
+        float InterpClamped = Mathf.Clamp(Interp, -3.5f, 1f);
+        return Mathf.LerpUnclamped(Perlin3Noise(NoiseCave) / InterpClamped, 1f / InterpClamped, InterpClamped);
     }
     float Perlin2Noise(Vector3 Point) //This creates the surface terrain, opposite of caves.
     {
@@ -113,37 +159,41 @@ public class ChunkCreator : MonoBehaviour
         //Recalculate Centre.
         Vector3 Raw = FirstPersonBody.Singleton.Body.transform.position;
         Raw /= ChunkSize;
-        WorldPos = new Vector3Int(Mathf.RoundToInt(Raw.x), Mathf.RoundToInt(Raw.y), Mathf.RoundToInt(Raw.z));
-        for (int x = 0; x < WorldSize; x++)
+        Vector3Int WPosition = new Vector3Int(Mathf.RoundToInt(Raw.x), Mathf.RoundToInt(Raw.y), Mathf.RoundToInt(Raw.z));
+        if (WorldPos != WPosition) //That means we're gonna have to do checks
         {
-            for (int y = 0; y < WorldSize; y++)
+            WorldPos = WPosition;
+            for (int x = 0; x < WorldSize; x++)
             {
-                for (int z = 0; z < WorldSize; z++)
+                for (int y = 0; y < WorldSize; y++)
                 {
-                    //Don't Bother creating chunks that are above the threshold (0).
-                    Vector3Int Position = new Vector3Int(x, y, z) + WorldPos;
-                    if (Position.y >= 3) continue;
-                    if (!Chunks.ContainsKey(Position))
+                    for (int z = 0; z < WorldSize; z++)
                     {
-                        Vector3 Pos = ((Vector3)WorldPos * ChunkSize) + (new Vector3(x, y, z) * ChunkSize) - (new Vector3(WorldSize * ChunkSize, WorldSize * ChunkSize, WorldSize * ChunkSize) * .5f);
-                        GameObject obj = Instantiate(Prefab, Pos, Quaternion.identity, transform);
-                        Chunk chunkRef = obj.GetComponent<Chunk>();
-                        Chunks.Add(Position, obj.GetComponent<Chunk>());
-                        chunkRef.NoiseOffset = Position; //Null?
-                        chunkRef.Key = Position;
-                        //Check to see if we have any data chunks on this position.
-                        if (SavedChunks.ContainsKey(Position))//Any previously saved chunks here?
+                        //Don't Bother creating chunks that are above the threshold (0).
+                        Vector3Int Position = new Vector3Int(x, y, z) + WorldPos;
+                        if (Position.y >= 3) continue;
+                        if (!Chunks.ContainsKey(Position))
                         {
-                            SavedChunks.TryGetValue(Position, out DataChunk chunk);
-                            Debug.Log("Enqeued Chunk " + Position + ", " + chunk.Items.Count + " Items, " + chunk.Modifcations.Count + " Node changes.");
-                            obj.GetComponent<Chunk>().SavedData = chunk;
-                            SavedChunks.Remove(Position);
+                            Vector3 Pos = ((Vector3)WorldPos * ChunkSize) + (new Vector3(x, y, z) * ChunkSize) - (new Vector3(WorldSize * ChunkSize, WorldSize * ChunkSize, WorldSize * ChunkSize) * .5f);
+                            GameObject obj = Instantiate(Prefab, Pos, Quaternion.identity, transform);
+                            Chunk chunkRef = obj.GetComponent<Chunk>();
+                            Chunks.Add(Position, obj.GetComponent<Chunk>());
+                            chunkRef.NoiseOffset = Position; //Null?
+                            chunkRef.Key = Position;
+                            //Check to see if we have any data chunks on this position.
+                            if (SavedChunks.ContainsKey(Position))//Any previously saved chunks here?
+                            {
+                                SavedChunks.TryGetValue(Position, out DataChunk chunk);
+                                Debug.Log("Enqeued Chunk " + Position + ", " + chunk.Items.Count + " Items, " + chunk.Modifcations.Count + " Node changes.");
+                                obj.GetComponent<Chunk>().SavedData = chunk;
+                                SavedChunks.Remove(Position);
+                            }
+                            ToGenerate.Enqueue(chunkRef);
                         }
-                        ToGenerate.Enqueue(chunkRef);
                     }
                 }
-            }
-        } //Instantiate new chunks to be later generated.
+            } //Instantiate new chunks to be later generated.
+        }
         //Check to see if we can dispatch any more chunks to be generated
         while ((Generating.Count < GenBatchSize) && ToGenerate.Count != 0)
         {
@@ -231,36 +281,6 @@ public class ChunkCreator : MonoBehaviour
             MaxIterations--;
         }
     }
-    [System.Serializable]
-    public struct Float3
-    {
-        public float x, y, z;
-        public Float3(Vector3 input)
-        {
-            x = input.x;
-            y = input.y;
-            z = input.z;
-        }
-        public void MakeVec(Float3 input, out Vector3 output)
-        {
-            output = new Vector3(input.x, input.y, input.z);
-        }
-    }
-    [System.Serializable]
-    public struct Key3D
-    {
-        public int x, y, z;
-        public Key3D(Vector3Int vector3)
-        {
-            x = vector3.x;
-            y = vector3.y;
-            z = vector3.z;
-        }
-        public void makeVec(Key3D input, out Vector3Int output)
-        {
-            output = new Vector3Int(input.x, input.y, input.z);
-        }
-    }
     private void OnDrawGizmos()
     {
         if (Chunks == null) return;
@@ -335,6 +355,7 @@ public class ChunkCreator : MonoBehaviour
         //A chunk that has items within it.
         public List<LODItem.LodItemData> Items;
         public int3 ChunkCoord;
+        public Dictionary<int3, float> Modifcations;
         public DataChunk(int3 coordinate)
         {
             Items = new List<LODItem.LodItemData>();
@@ -357,10 +378,9 @@ public class ChunkCreator : MonoBehaviour
             ChunkCoord = int3.zero;
         }
         //Also add a dictionary for all the nodes that were modified.
-        public Dictionary<int3, float> Modifcations;
     }
     [System.Serializable]
-    public struct WorldData
+    public class WorldData
     {
         //Chunk modifcations
         //LODItems
@@ -375,7 +395,7 @@ public class ChunkCreator : MonoBehaviour
             dateTime = System.DateTime.Now;
             ChunksData = new Dictionary<int3, DataChunk>();
             //Iterate through all existing chunks.
-            foreach(KeyValuePair<Vector3Int, Chunk> KeyValuePair in creator.Chunks)
+            foreach (KeyValuePair<Vector3Int, Chunk> KeyValuePair in creator.Chunks)
             {
                 DataChunk chunk = new DataChunk(KeyValuePair.Key);
                 Bounds ChunkBounds = new Bounds(KeyValuePair.Value.transform.position + new Vector3(creator.ChunkSize, creator.ChunkSize, creator.ChunkSize) * .5f, new Vector3(creator.ChunkSize, creator.ChunkSize, creator.ChunkSize));
@@ -409,7 +429,7 @@ public class ChunkCreator : MonoBehaviour
                 }
             }
             //That should eliminate all active items, now we also need to include the chunks that are out of range.
-            foreach(KeyValuePair<Vector3Int, DataChunk> data in creator.SavedChunks)
+            foreach (KeyValuePair<Vector3Int, DataChunk> data in creator.SavedChunks)
             {
                 int3 coord = new int3(data.Key.x, data.Key.y, data.Key.z);
                 ChunksData.Add(coord, data.Value);

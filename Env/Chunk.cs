@@ -52,8 +52,8 @@ public class Chunk : MonoBehaviour
             GameObject prefabobj = LODItemDatabase.Singleton.GetPrefabFromID(SavedData.Items[i].ItemId);
             if (prefabobj == null) { Debug.LogWarning("'" + SavedData.Items[i].ItemId + "' Has no match in LODItemDatabase, Consider removing this item."); continue; }
             Vector3 position, euler;
-            SavedData.Items[i].Position.MakeVec(SavedData.Items[i].Position, out position);
-            SavedData.Items[i].Euler.MakeVec(SavedData.Items[i].Euler, out euler);
+            position = new Vector3(SavedData.Items[i].Position.x, SavedData.Items[i].Position.y, SavedData.Items[i].Position.z);
+            euler = new Vector3(SavedData.Items[i].Euler.x, SavedData.Items[i].Euler.y, SavedData.Items[i].Euler.z);
             Instantiate(prefabobj, position, Quaternion.Euler(euler), transform);
             Debug.Log("Loaded " + SavedData.Items[i].ItemId);
         }
@@ -271,6 +271,7 @@ public class Chunk : MonoBehaviour
     }
     public void Modifcation(Bounds bounds, bool subtract)
     {
+        //If our noiseoffset's y is 2, that means we are on the upper limit of the world.
         if (Modified == null)
         {
             Modified = new Dictionary<int3, float>();
@@ -284,8 +285,28 @@ public class Chunk : MonoBehaviour
                 {
                     int3 Cooridnate = new int3(x, y, z);
                     Vector3 Position = transform.position + new Vector3(x, y, z);
+                    //Top boundary would be -45 + 16
+                    //Lower boundary is -388
                     if (bounds.Contains(Position))
                     {
+                        //Check to see if this poition is out of bounds.
+                        //Debug.Log(Position.y);
+                        //We get -30-35 when we need to ensure that this works.
+                        //The lower we go, the lower position.y is.
+                        if (Position.y >= -31)
+                        {
+                            //Air
+                            Debug.DrawLine(bounds.center, Position, Color.yellow, 1f);
+                            terrainMap[x, y, z] = 1f;
+                            continue;
+                        }
+                        if(-388 >= Position.y)
+                        {
+                            //Solid
+                            Debug.DrawLine(bounds.center, Position, Color.yellow, 1f);
+                            terrainMap[x, y, z] = 0f;
+                            continue;
+                        }
                         Debug.DrawLine(bounds.center, Position, Color.blue, 1f);
                         terrainMap[x, y, z] = subtract ? terrainMap[x, y, z] = 0f : terrainMap[x, y, z] = 1f;
                         if (Modified.ContainsKey(Cooridnate))

@@ -1,11 +1,13 @@
 using UnityEngine;
-
+using TMPro;
 public class PlayerCamera : MonoBehaviour
 {
+    public TextMeshProUGUI Tooltip;
     public Transform CameraTransform, LockTransform, HandsPos;
     public float Sway, Smooth;
     public static PlayerCamera Singleton;
     bool active = true;
+    string tooltip = "";
     public void SetActive(bool State)
     {
         active = State;
@@ -38,5 +40,14 @@ public class PlayerCamera : MonoBehaviour
     private void Update()
     {
         UpdateCamera();
+        if (tooltip != "")
+        {
+            Tooltip.text = tooltip;
+            tooltip = "";
+        }
+    }
+    public void ShowTooltip(string tooltip)
+    {
+        this.tooltip = tooltip;
     }
 }

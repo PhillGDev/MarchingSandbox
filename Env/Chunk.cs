@@ -276,6 +276,7 @@ public class Chunk : MonoBehaviour
         {
             Modified = new Dictionary<int3, float>();
         }
+        int NodesModified = 0;
         for (int x = 0; x < size + 1; x++)
         {
             //Debug.Log("Populating Map.. " + x + " / " + (width + 1));
@@ -308,21 +309,42 @@ public class Chunk : MonoBehaviour
                             continue;
                         }
                         Debug.DrawLine(bounds.center, Position, Color.blue, 1f);
-                        terrainMap[x, y, z] = subtract ? terrainMap[x, y, z] = 0f : terrainMap[x, y, z] = 1f;
+                        if (subtract)
+                        {
+                            if (ItemStack.Contains(Inventory.Singleton.Items, Inventory.Singleton.QueryItem("ms_item_terrainblock")))
+                            {
+                                terrainMap[x, y, z] = terrainMap[x, y, z] = 0f;
+                                
+                                Inventory.Singleton.RemoveStacks(ItemStack.StackItemsSingular(Inventory.Singleton.QueryItem("ms_item_terrainblock")));
+                            }
+                            
+                        }else terrainMap[x, y, z] = terrainMap[x, y, z] = 1f;
+
                         if (Modified.ContainsKey(Cooridnate))
                         {
                             Modified[Cooridnate] = terrainMap[x, y, z];
                         }
                         else Modified.Add(Cooridnate, terrainMap[x, y, z]);
+                        NodesModified++;
                     }
                 }
             }
         }
-        awaitingGen = false;
-        StopAllCoroutines();
-        //Look through the qeue of generating chunks, remove us.
-        ChunkCreator.Singleton.RemoveFromQeue(this);
-        running = StartCoroutine(Generate(false, false));
+        if (NodesModified != 0) //if we actually did something.
+        {
+            ItemStack stack = Inventory.Singleton.QueryItemStack("ms_item_terrainblock", NodesModified);
+            if (!subtract)
+            {
+                //Create a stack of the size that we just mined at the centre of the cursor, if its subtracted of course.
+                //Create an instance of this item in the world.
+                Inventory.Singleton.CreatePhysicalItem(stack, bounds.center);
+            }
+            awaitingGen = false;
+            StopAllCoroutines();
+            //Look through the qeue of generating chunks, remove us.
+            ChunkCreator.Singleton.RemoveFromQeue(this);
+            running = StartCoroutine(Generate(false, false));
+        }
     }
 
     float SampleTerrain(Vector3Int point)

@@ -18,17 +18,16 @@ public class ToolManager : MonoBehaviour
     }
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.R)) ChangeTool(1);
-        if(Input.GetKeyDown(KeyCode.Alpha1)) ChangeTool(-CurrentTool);
-        if (Input.GetKeyDown(KeyCode.Alpha2)) ChangeTool(-CurrentTool + 1);
-        if (Input.GetKeyDown(KeyCode.Alpha3)) ChangeTool(-CurrentTool + 2);
-        if (Input.GetKeyDown(KeyCode.Alpha4)) ChangeTool(-CurrentTool + 3);
+        if (Input.GetKeyDown(KeyCode.R)) SetTool(CurrentTool + 1);
+        if(Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
+        if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
+        if (Input.GetKeyDown(KeyCode.Alpha3)) SetTool(2);
+        if (Input.GetKeyDown(KeyCode.Alpha4)) SetTool(3);
     }
-    void ChangeTool(int Change)
+    void SetTool(int Index)
     {
-        CurrentTool += Change;
-        if (CurrentTool >= Tools.Count) CurrentTool = 0;
-        if (CurrentTool <= Tools.Count - 1) CurrentTool = Tools.Count - 1;
+        if (Index < Tools.Count - 1 && Index > -1) CurrentTool = Index;
+        else CurrentTool = 0;
         UpdateTools();
     }
     void CreateTools()
